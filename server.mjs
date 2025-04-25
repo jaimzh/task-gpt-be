@@ -5,12 +5,14 @@ import { connectToDB, getDB } from "./db.js";
 import { ObjectId } from "mongodb";
 
 const app = express();
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 
 app.use(express.json());
 
 const corsOptions = {
-  origin: "http://localhost:5173",
+  origin: process.env.NODE_ENV === "production" 
+  ? "https://task-gpt-fe.vercel.app/"  
+  : "http://localhost:5173",
   methods: ["GET", "POST", "DELETE", "PUT", "PATCH"],
   allowedHeaders: ["Content-Type"]
 };
