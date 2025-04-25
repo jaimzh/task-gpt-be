@@ -1,58 +1,39 @@
 import express from "express";
-import fs from "fs";
-import path from "path";
-import { v4 as uuidv4 } from "uuid";
-import { fileURLToPath } from "url";
-import { convertTextToTasks } from "./ai.mjs";
-const app = express();
 import cors from "cors";
+import { convertTextToTasks } from "./ai.mjs";
+import { connectToDB, getDB } from "./db.js";
+import { ObjectId } from "mongodb";
+
+const app = express();
+const PORT = 5000;
 
 app.use(express.json());
 
 const corsOptions = {
   origin: "http://localhost:5173",
   methods: ["GET", "POST", "DELETE", "PUT", "PATCH"],
-  allowedHeaders: ['Content-Type']
+  allowedHeaders: ["Content-Type"]
 };
-
 app.use(cors(corsOptions));
 
-const PORT = 5000;
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const tasksFile = path.join(__dirname, "tasks.json");
-const getTasks = () => {
-  const data = fs.readFileSync(tasksFile, "utf-8");
-  return JSON.parse(data);
-};
-
-//AI POST ROUTE
+// AI POST ROUTE
 app.post("/generate-ai-tasks", async (req, res) => {
+  const db = getDB();
   const { prompt } = req.body;
 
   try {
     const aiText = await convertTextToTasks(prompt);
     const cleanedText = aiText
-      .replace(/```json/g, "") // Remove the opening code block markdown
-      .replace(/```/g, "") // Remove the closing code block markdown
-      .replace(/'/g, '"') // Replace single quotes with double quotes
+      .replace(/```json/g, "")
+      .replace(/```/g, "")
+      .replace(/'/g, '"')
       .trim();
 
-  
-    const tasks = JSON.parse(cleanedText); // Parse the cleaned JSON
-    tasks.forEach((task) => {
-      task.id = uuidv4(); // Generate a unique ID
-      task.isCompleted = false;
-    });
+    const tasks = JSON.parse(cleanedText);
+    tasks.forEach(task => (task.isCompleted = false));
 
-    fs.writeFileSync(tasksFile, JSON.stringify(tasks, null, 2));
-
-    if (!cleanedText || cleanedText.length < 3) {
-      return res
-        .status(400)
-        .json({ error: "AI returned invalid or empty output." });
-    }
+    const result = await db.collection("tasks").insertMany(tasks);
+    tasks.forEach((task, index) => (task._id = result.insertedIds[index]));
 
     res.json({ tasks });
   } catch (error) {
@@ -61,81 +42,90 @@ app.post("/generate-ai-tasks", async (req, res) => {
   }
 });
 
-// GET ROUTE
-app.get("/tasks", (req, res) => {
-  const tasks = getTasks();
+// GET all tasks
+app.get("/tasks", async (req, res) => {
+  const db = getDB();
+  const tasks = await db.collection("tasks").find().toArray();
   res.json(tasks);
 });
 
-// POST ROUTE
-app.post("/tasks", (req, res) => {
-  const newTask = req.body;
-  const tasks = getTasks();
+// POST new task
+app.post("/tasks", async (req, res) => {
+  const db = getDB();
+  const newTask = {
+    ...req.body,
+    isCompleted: false
+  };
 
-  newTask.id = uuidv4();
-  newTask.isCompleted = false;
-  tasks.push(newTask);
+  const result = await db.collection("tasks").insertOne(newTask);
+  newTask._id = result.insertedId;
 
-  fs.writeFileSync(tasksFile, JSON.stringify(tasks, null, 2));
   res.status(200).json(newTask);
 });
 
-// DELETE ROUTE
-app.delete("/tasks/:id", (req, res) => {
+// DELETE a task
+app.delete("/tasks/:id", async (req, res) => {
+  const db = getDB();
   const taskId = req.params.id;
-  const tasks = getTasks();
 
-  const filteredTasks = tasks.filter((task) => task.id !== taskId);
+  const result = await db.collection("tasks").deleteOne({ _id: new ObjectId(taskId) });
 
-  if (filteredTasks.length === tasks.length) {
+  if (result.deletedCount === 0) {
     return res.status(404).json({ error: "Task not found" });
   }
 
-  fs.writeFileSync(tasksFile, JSON.stringify(filteredTasks, null, 2));
   res.json({ message: `Task ${taskId} has been deleted` });
 });
 
-// PUT ROUTE
-app.put("/tasks/:id", (req, res) => {
+// PUT (full update)
+app.put("/tasks/:id", async (req, res) => {
+  const db = getDB();
   const taskId = req.params.id;
-  const updatedTaskData = req.body;
+  const updatedTask = req.body;
 
-  let tasks = getTasks();
-  const taskIndex = tasks.findIndex((task) => task.id === taskId);
+  const result = await db.collection("tasks").findOneAndUpdate(
+    { _id: new ObjectId(taskId) },
+    { $set: updatedTask },
+    { returnDocument: "after" }
+  );
 
-  if (taskIndex === -1) {
+  if (result.matchedCount === 0) {
     return res.status(404).json({ message: "Task not found" });
   }
 
-  tasks[taskIndex] = { ...tasks[taskIndex], ...updatedTaskData };
-
-  fs.writeFileSync(tasksFile, JSON.stringify(tasks, null, 2));
-  res.status(200).json(tasks[taskIndex]);
+  res.status(200).json({ message: "Task successfully updated" });
 });
 
-// PATCH ROUTE for updating the isCompleted field
-app.patch("/tasks/:id/completed", (req, res) => {
+// PATCH (update isCompleted only)
+app.patch("/tasks/:id/completed", async (req, res) => {
+  const db = getDB();
   const taskId = req.params.id;
   const { isCompleted } = req.body;
 
-  let tasks = getTasks();
-  const taskIndex = tasks.findIndex((task) => task.id === taskId);
+  const result = await db.collection("tasks").findOneAndUpdate(
+    { _id: new ObjectId(taskId) },
+    { $set: { isCompleted } },
+    { returnDocument: "after" }
+  );
 
-  if (taskIndex === -1) {
+  if (result.matchedCount === 0) {
     return res.status(404).json({ message: "Task not found" });
   }
 
-  tasks[taskIndex].isCompleted = isCompleted;
-
-  fs.writeFileSync(tasksFile, JSON.stringify(tasks, null, 2));
-
-  res.status(200).json(tasks[taskIndex]);
+  res.status(200).json({ message: "Task successfully updated"});
 });
 
+// Root route
 app.get("/", (req, res) => {
   res.send("Hello from your task backend!");
 });
 
-app.listen(PORT, () => {
-  console.log(`app listening on port server 1 ${PORT}`);
+
+
+
+// Start server after DB connects
+connectToDB().then(() => {
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
 });
