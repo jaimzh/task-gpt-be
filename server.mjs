@@ -11,7 +11,7 @@ app.use(express.json());
 
 const corsOptions = {
   origin: process.env.NODE_ENV === "production" 
-  ? "https://task-gpt-fe.vercel.app/"  
+  ? "https://task-gpt-fe.vercel.app"  
   : "http://localhost:5173",
   methods: ["GET", "POST", "DELETE", "PUT", "PATCH"],
   allowedHeaders: ["Content-Type"]
