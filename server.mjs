@@ -9,14 +9,25 @@ const PORT = process.env.PORT || 5000;
 
 app.use(express.json());
 
+const allowedOrigins = [
+  "https://task-gpt-fe.vercel.app",
+  "http://localhost:5173"
+];
+
 const corsOptions = {
-  origin: process.env.NODE_ENV === "production" 
-  ? "https://task-gpt-fe.vercel.app"  
-  : "http://localhost:5173",
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
   methods: ["GET", "POST", "DELETE", "PUT", "PATCH"],
   allowedHeaders: ["Content-Type"]
 };
+
 app.use(cors(corsOptions));
+
 
 // AI POST ROUTE
 app.post("/generate-ai-tasks", async (req, res) => {
