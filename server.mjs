@@ -11,6 +11,7 @@ app.use(express.json());
 
 const allowedOrigins = [
   "https://task-gpt-fe.vercel.app",
+  "http://localhost:5173/task-gpt",
   "http://localhost:5173"
 ];
 
